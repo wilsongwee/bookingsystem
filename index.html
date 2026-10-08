@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Room Booking</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Room Booking</h1>
+      <p class="sub">Relax Rooms · Mini Workpods · Discussion Rooms</p>
+    </div>
+    <form id="who" class="who" autocomplete="on">
+      <input id="who-name" name="name" placeholder="Your name" required>
+      <input id="who-email" name="email" type="email" placeholder="Work email" required>
+      <button type="submit">Save</button>
+      <span id="who-status" class="who-status"></span>
+    </form>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="book" role="tab">Book a room</button>
+    <button class="tab" data-view="mine" role="tab">My bookings</button>
+    <button class="tab" data-view="usage" role="tab">Utilisation</button>
+  </nav>
+
+  <main>
+    <section id="view-book" class="view">
+      <div class="rules" id="rules"></div>
+      <div class="controls">
+        <div id="days" class="days"></div>
+        <div id="types" class="chips"></div>
+      </div>
+      <div class="legend">
+        <span><i class="sw free"></i>Available</span>
+        <span><i class="sw mine"></i>Your booking</span>
+        <span><i class="sw taken"></i>Booked</span>
+        <span><i class="sw past"></i>Past</span>
+      </div>
+      <div class="grid-wrap"><table id="grid" class="grid"></table></div>
+    </section>
+
+    <section id="view-mine" class="view" hidden>
+      <h2>My upcoming bookings</h2>
+      <div id="mine-list"></div>
+    </section>
+
+    <section id="view-usage" class="view" hidden>
+      <h2>Utilisation</h2>
+      <p class="muted">Share of available 2-hour blocks that were booked, over the selected period. Use this to decide when to adjust the cap.</p>
+      <div class="controls">
+        <label>Period
+          <select id="usage-range">
+            <option value="7">Next 7 days</option>
+            <option value="-7">Past 7 days</option>
+            <option value="-30">Past 30 days</option>
+          </select>
+        </label>
+        <button id="export">Export bookings (CSV)</button>
+      </div>
+      <div id="usage"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
