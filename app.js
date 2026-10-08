@@ -6,14 +6,68 @@
   const USER_KEY = "roombooking.user.v1";
 
   // ---- Storage --------------------------------------------------------------
-  // Prototype keeps data in this browser only. Swap these two functions for
-  // API calls (or a shared sheet/db) when moving beyond the prototype.
-  function loadBookings() {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
-  }
-  function saveBookings(list) {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(list)); } catch {}
-  }
+  // Three backends with the same async interface:
+  //  - served by the Apps Script web app (apps-script/): google.script.run
+  //  - hosted elsewhere with sheetsApiUrl set: the web app's JSON API
+  //  - otherwise: this browser's localStorage, for trying it on one machine.
+  const localStore = {
+    async list() {
+      try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
+    },
+    async add(b) {
+      const list = await this.list();
+      if (list.some((x) => x.roomId === b.roomId && x.date === b.date && x.start === b.start))
+        throw new Error("Sorry, that slot was just taken. Please pick another.");
+      const booking = { ...b, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), createdAt: new Date().toISOString() };
+      this._save(list.concat(booking));
+      return booking;
+    },
+    async cancel(id) {
+      this._save((await this.list()).filter((x) => x.id !== id));
+    },
+    _save(list) {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(list)); } catch {}
+    },
+  };
+
+  const sheetsStore = {
+    async list() {
+      const from = ymd(addDays(new Date(), -31));
+      const res = await fetch(`${C.sheetsApiUrl}?action=list&from=${from}`);
+      return (await this._json(res)).bookings;
+    },
+    async add(b) {
+      return (await this._post({ action: "book", booking: b })).booking;
+    },
+    async cancel(id, email) {
+      await this._post({ action: "cancel", id, email });
+    },
+    async _post(body) {
+      // text/plain keeps this a "simple" request, which Apps Script accepts cross-origin.
+      const res = await fetch(C.sheetsApiUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
+      return this._json(res);
+    },
+    async _json(res) {
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Something went wrong.");
+      return data;
+    },
+  };
+
+  const gasRun = (fn, ...args) =>
+    new Promise((resolve, reject) =>
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler((e) => reject(new Error(String(e && e.message || e).replace(/^Error:\s*/, ""))))
+        [fn](...args));
+  const appsScriptStore = {
+    list: () => gasRun("apiList", ymd(addDays(new Date(), -31))),
+    add: (b) => gasRun("apiBook", b),
+    cancel: (id, email) => gasRun("apiCancel", id, email),
+  };
+
+  const store = window.google?.script?.run ? appsScriptStore : C.sheetsApiUrl ? sheetsStore : localStore;
+
   function loadUser() {
     try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; }
   }
@@ -51,8 +105,10 @@
   }
 
   // ---- State ---------------------------------------------------------------
-  let bookings = loadBookings();
+  let bookings = [];
   let user = loadUser();
+  if (user && !user.phone) user = null; // saved before phone numbers were required
+  let busy = false;
   const days = bookableDays();
   let selectedDay = days.length ? ymd(days[0]) : ymd(new Date());
   let selectedType = "All";
@@ -61,6 +117,8 @@
   const el = (id) => document.getElementById(id);
   const roomById = (id) => C.rooms.find((r) => r.id === id);
   const sameUser = (b) => user && b.email.toLowerCase() === user.email.toLowerCase();
+
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   function toast(msg) {
     const t = el("toast");
@@ -71,63 +129,96 @@
   }
 
   // ---- Rules ---------------------------------------------------------------
+  // Checked here for instant feedback; the Sheets backend re-checks under a lock.
   function hoursUsed(email, dateStr) {
     return bookings
       .filter((b) => b.date === dateStr && b.email.toLowerCase() === email.toLowerCase())
       .reduce((sum, b) => sum + (b.end - b.start), 0);
   }
 
+  function capReached(dateStr) {
+    return !!(user && C.maxHoursPerPersonPerDay &&
+      hoursUsed(user.email, dateStr) + C.blockHours > C.maxHoursPerPersonPerDay);
+  }
+
   function canBook(roomId, dateStr, slot) {
-    if (!user) return "Enter your name and work email first.";
+    if (!user) return "Enter your name, work email and phone number first.";
     if (slotIsPast(dateStr, slot)) return "That slot has already passed.";
     if (bookings.some((b) => b.roomId === roomId && b.date === dateStr && b.start === slot.start))
       return "That slot was just taken.";
     if (bookings.some((b) => sameUser(b) && b.date === dateStr && b.start === slot.start))
       return "You already have a booking at that time.";
-    if (hoursUsed(user.email, dateStr) + C.blockHours > C.maxHoursPerPersonPerDay)
+    if (capReached(dateStr))
       return `Daily limit reached: ${C.maxHoursPerPersonPerDay}h per person per day.`;
     return null;
   }
 
-  function book(roomId, dateStr, slot) {
-    bookings = loadBookings(); // pick up changes from other tabs
-    const err = canBook(roomId, dateStr, slot);
-    if (err) { toast(err); render(); return; }
-    bookings.push({
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-      roomId, date: dateStr, start: slot.start, end: slot.end,
-      name: user.name, email: user.email, createdAt: new Date().toISOString(),
-    });
-    saveBookings(bookings);
-    toast(`Booked ${roomById(roomId).name}, ${fmtDay(parseYmd(dateStr))} ${slot.label}`);
+  async function refresh() {
+    try {
+      bookings = await store.list();
+    } catch (e) {
+      toast("Couldn't load bookings: " + e.message);
+    }
     render();
+  }
+
+  async function run(work, done) {
+    if (busy) return;
+    busy = true;
+    document.body.classList.add("busy");
+    try {
+      await work();
+      toast(done);
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      busy = false;
+      document.body.classList.remove("busy");
+      await refresh();
+    }
+  }
+
+  function book(roomId, dateStr, slot) {
+    const err = canBook(roomId, dateStr, slot);
+    if (err) { toast(err); return; }
+    const room = roomById(roomId);
+    run(
+      () => store.add({ roomId, roomName: room.name, date: dateStr, start: slot.start, end: slot.end,
+                        name: user.name, email: user.email, phone: user.phone }),
+      `Booked ${room.name}, ${fmtDay(parseYmd(dateStr))} ${slot.label}`
+    );
   }
 
   function cancel(id) {
     const b = bookings.find((x) => x.id === id);
     if (!b || !sameUser(b)) return;
     if (!confirm(`Cancel ${roomById(b.roomId)?.name || b.roomId} on ${fmtDay(parseYmd(b.date))}?`)) return;
-    bookings = loadBookings().filter((x) => x.id !== id);
-    saveBookings(bookings);
-    toast("Booking cancelled — the slot is free for others.");
-    render();
+    run(() => store.cancel(id, user.email), "Booking cancelled — the slot is free for others.");
   }
 
   // ---- Rendering -----------------------------------------------------------
   function renderWho() {
     el("who-name").value = user?.name || "";
     el("who-email").value = user?.email || "";
+    el("who-phone").value = user?.phone || "";
     el("who-status").textContent = user ? `Booking as ${user.name}` : "Not set";
   }
 
   function renderRules() {
-    const blocksPerDay = Math.floor(C.maxHoursPerPersonPerDay / C.blockHours);
-    let used = user ? hoursUsed(user.email, selectedDay) : 0;
+    let limit;
+    if (C.maxHoursPerPersonPerDay) {
+      const used = user ? hoursUsed(user.email, selectedDay) : 0;
+      limit = `Limit: <b>${C.maxHoursPerPersonPerDay}h per person per day</b>` +
+        (user ? ` <span class="muted">(you've used ${used}h on this day)</span>. ` : ". ");
+    } else {
+      limit = "Book as many blocks as you need, one room per time block. ";
+    }
     el("rules").innerHTML =
-      `Bookings are in <b>${C.blockHours}-hour blocks</b> (${pad(C.openHour)}:00–${pad(C.closeHour)}:00). ` +
-      `Limit: <b>${C.maxHoursPerPersonPerDay}h per person per day</b> ` +
-      `(${blocksPerDay} block${blocksPerDay === 1 ? "" : "s"}). Book up to ${C.bookingWindowDays} days ahead.` +
-      (user ? ` <span class="muted">You've used ${used}h of ${C.maxHoursPerPersonPerDay}h on this day.</span>` : "");
+      `Bookings are in <b>${C.blockHours}-hour blocks</b> (${pad(C.openHour)}:00–${pad(C.closeHour)}:00), ` +
+      `up to ${C.bookingWindowDays} days ahead. ${limit}<br>` +
+      `<b>No-show:</b> if nobody has turned up ${C.noShowReleaseMinutes} minutes after the start, anyone may use the room. ` +
+      `Questions about a booking? Contact the person who booked it — their number is on the slot.` +
+      (store !== localStore ? "" : ` <span class="muted">(Prototype mode: bookings are saved in this browser only.)</span>`);
   }
 
   function renderDays() {
@@ -158,7 +249,7 @@
     const head = grid.insertRow();
     head.innerHTML = `<th class="room">Room</th>` + SLOTS.map((s) => `<th>${s.label}</th>`).join("");
 
-    const capReached = user && hoursUsed(user.email, selectedDay) + C.blockHours > C.maxHoursPerPersonPerDay;
+    const atCap = capReached(selectedDay);
     let lastType = null;
     for (const room of C.rooms) {
       if (selectedType !== "All" && room.type !== selectedType) continue;
@@ -182,15 +273,16 @@
           btn.classList.add("mine"); btn.textContent = "Yours · cancel";
           btn.onclick = () => cancel(b.id);
         } else if (b) {
-          btn.classList.add("taken"); btn.textContent = b.name; btn.disabled = true;
+          btn.classList.add("taken"); btn.disabled = true;
+          btn.innerHTML = `${esc(b.name)}<small>${esc(b.phone || "")}</small>`;
         } else if (slotIsPast(selectedDay, slot)) {
           btn.classList.add("past"); btn.textContent = "—"; btn.disabled = true;
         } else {
-          btn.classList.add(capReached ? "blocked" : "free");
-          btn.textContent = capReached ? "Limit reached" : "Book";
+          btn.classList.add(atCap ? "blocked" : "free");
+          btn.textContent = atCap ? "Limit reached" : "Book";
           btn.onclick = () => book(room.id, selectedDay, slot);
         }
-        btn.title = `${room.name} · ${slot.label}`;
+        btn.title = `${room.name} · ${slot.label}` + (b ? ` · booked by ${b.name}, ${b.phone || ""}` : "");
         td.appendChild(btn);
       }
     }
@@ -254,20 +346,20 @@
     el("usage").innerHTML =
       `<p><strong>${overall}%</strong> overall · ${total.used} bookings · ${people} people · ${dayStrs.length} working days</p>` +
       tableHtml("Room type", rows) + tableHtml("Time block", slotRows) +
-      (overall < 50 && total.capacity
+      (overall < 50 && total.capacity && C.maxHoursPerPersonPerDay
         ? `<p class="hint">Utilisation is under 50% — consider raising <code>maxHoursPerPersonPerDay</code> in config.js.</p>`
         : overall >= 85
-        ? `<p class="hint">Utilisation is 85%+ — demand is high; keep the 2h cap or consider shorter blocks.</p>`
+        ? `<p class="hint">Utilisation is 85%+ — demand is high; consider a per-person cap (<code>maxHoursPerPersonPerDay</code>) or shorter blocks.</p>`
         : "");
   }
 
   function exportCsv() {
-    const head = ["date", "start", "end", "room", "type", "name", "email", "createdAt"];
-    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const head = ["date", "start", "end", "room", "type", "name", "email", "phone", "createdAt"];
+    const csv = (v) => `"${String(v).replace(/"/g, '""')}"`;
     const lines = [head.join(",")].concat(
       bookings.map((b) => {
         const r = roomById(b.roomId);
-        return [b.date, `${pad(b.start)}:00`, `${pad(b.end)}:00`, r?.name || b.roomId, r?.type || "", b.name, b.email, b.createdAt].map(esc).join(",");
+        return [b.date, `${pad(b.start)}:00`, `${pad(b.end)}:00`, r?.name || b.roomId, r?.type || "", b.name, b.email, b.phone || "", b.createdAt].map(csv).join(",");
       })
     );
     const a = document.createElement("a");
@@ -285,8 +377,9 @@
     e.preventDefault();
     const name = el("who-name").value.trim();
     const email = el("who-email").value.trim();
-    if (!name || !email) return;
-    user = { name, email };
+    const phone = el("who-phone").value.trim();
+    if (!name || !email || !phone) return;
+    user = { name, email, phone };
     saveUser(user);
     toast(`Saved — booking as ${name}`);
     render();
@@ -300,7 +393,11 @@
   );
   el("usage-range").addEventListener("change", renderUsage);
   el("export").addEventListener("click", exportCsv);
-  window.addEventListener("storage", (e) => { if (e.key === STORE_KEY) { bookings = loadBookings(); render(); } });
+  window.addEventListener("storage", (e) => { if (e.key === STORE_KEY) refresh(); });
+  // Pick up other people's bookings while the page is open.
+  setInterval(() => { if (!busy && !document.hidden) refresh(); }, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 
   render();
+  refresh();
 })();

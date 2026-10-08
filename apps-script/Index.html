@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Room Booking</title>
+  <style>
+:root {
+  --bg: #f6f7f9; --surface: #fff; --text: #1d2330; --muted: #677083; --line: #e2e5ea;
+  --accent: #2f5bd3; --accent-ink: #fff;
+  --free: #e8f5ec; --free-ink: #1f7a3c; --mine: #2f5bd3; --taken: #eceef2; --taken-ink: #677083; --past: #f6f7f9;
+  --warn: #b4540a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --surface: #1a1e26; --text: #e6e8ec; --muted: #9aa3b2; --line: #2a303b;
+    --accent: #6d8ff0; --accent-ink: #0d1220;
+    --free: #173222; --free-ink: #7fd69c; --mine: #6d8ff0; --taken: #242a34; --taken-ink: #9aa3b2; --past: #161a21;
+    --warn: #f0a35e;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+h1 { margin: 0; font-size: 20px; } h2 { font-size: 17px; margin: 4px 0 12px; }
+.sub, .muted { color: var(--muted); margin: 2px 0 0; font-size: 13px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; }
+button:hover { border-color: var(--accent); }
+input, select { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; }
+
+.topbar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.who { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.who button { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.who-status { font-size: 13px; color: var(--muted); }
+
+.tabs { display: flex; gap: 4px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 12px; background: none; color: var(--muted); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+.rules { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; }
+.rules b { color: var(--accent); }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.days, .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.days button, .chips button { padding: 5px 10px; font-size: 13px; }
+.days button.active, .chips button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -2px; border: 1px solid var(--line); }
+.sw.free { background: var(--free); } .sw.mine { background: var(--mine); } .sw.taken { background: var(--taken); } .sw.past { background: var(--past); }
+
+.grid-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.grid { border-collapse: collapse; width: 100%; min-width: 640px; }
+.grid th, .grid td { border-bottom: 1px solid var(--line); padding: 6px; text-align: center; font-size: 13px; }
+.grid th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.grid th.room { text-align: left; color: var(--text); position: sticky; left: 0; background: var(--surface); min-width: 150px; }
+.grid th.room small { display: block; color: var(--muted); font-weight: 400; }
+.grid tr.group th { text-align: left; background: var(--bg); color: var(--text); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.slot { width: 100%; min-height: 34px; border-radius: 6px; border: 1px solid transparent; font-size: 12px; padding: 4px; }
+.slot.free { background: var(--free); color: var(--free-ink); }
+.slot.mine { background: var(--mine); color: var(--accent-ink); font-weight: 600; }
+.slot.taken { background: var(--taken); color: var(--text); cursor: default; line-height: 1.25; }
+.slot small { display: block; color: var(--taken-ink); font-size: 11px; }
+.slot.past { background: var(--past); color: var(--muted); cursor: default; opacity: .6; }
+.slot.blocked { background: var(--free); color: var(--muted); opacity: .55; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.card .when { color: var(--muted); font-size: 13px; }
+.empty { color: var(--muted); padding: 20px 0; }
+
+.usage-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.usage-table th, .usage-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 14px; }
+.bar { height: 8px; background: var(--taken); border-radius: 4px; overflow: hidden; min-width: 80px; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+.hint { margin-top: 10px; font-size: 13px; color: var(--warn); }
+
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+.toast.show { opacity: 1; }
+body.busy, body.busy .slot { cursor: progress; }
+.who input { width: 170px; }
+@media (max-width: 600px) { .who input { width: 100%; } }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Room Booking</h1>
+      <p class="sub">Relax Rooms · Mini Workpods · Discussion Rooms</p>
+    </div>
+    <form id="who" class="who" autocomplete="on">
+      <input id="who-name" name="name" placeholder="Your name" required>
+      <input id="who-email" name="email" type="email" placeholder="Work email" required>
+      <input id="who-phone" name="tel" type="tel" placeholder="Phone number" required>
+      <button type="submit">Save</button>
+      <span id="who-status" class="who-status"></span>
+    </form>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="book" role="tab">Book a room</button>
+    <button class="tab" data-view="mine" role="tab">My bookings</button>
+    <button class="tab" data-view="usage" role="tab">Utilisation</button>
+  </nav>
+
+  <main>
+    <section id="view-book" class="view">
+      <div class="rules" id="rules"></div>
+      <div class="controls">
+        <div id="days" class="days"></div>
+        <div id="types" class="chips"></div>
+      </div>
+      <div class="legend">
+        <span><i class="sw free"></i>Available</span>
+        <span><i class="sw mine"></i>Your booking</span>
+        <span><i class="sw taken"></i>Booked</span>
+        <span><i class="sw past"></i>Past</span>
+      </div>
+      <div class="grid-wrap"><table id="grid" class="grid"></table></div>
+    </section>
+
+    <section id="view-mine" class="view" hidden>
+      <h2>My upcoming bookings</h2>
+      <div id="mine-list"></div>
+    </section>
+
+    <section id="view-usage" class="view" hidden>
+      <h2>Utilisation</h2>
+      <p class="muted">Share of available 2-hour blocks that were booked, over the selected period. Use this to decide when to adjust the cap.</p>
+      <div class="controls">
+        <label>Period
+          <select id="usage-range">
+            <option value="7">Next 7 days</option>
+            <option value="-7">Past 7 days</option>
+            <option value="-30">Past 30 days</option>
+          </select>
+        </label>
+        <button id="export">Export bookings (CSV)</button>
+      </div>
+      <div id="usage"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+// Booking rules and room list. Edit this file to adjust the system —
+// no other code changes are needed for the common tweaks.
+window.BOOKING_CONFIG = {
+  // Google Sheets backend: paste the Apps Script web app URL here (see
+  // apps-script/SETUP.md). Leave empty to keep bookings in this browser only.
+  sheetsApiUrl: "",
+
+  // Operating hours (24h clock). Slots are generated from open to close.
+  openHour: 8,
+  closeHour: 18,
+
+  // Length of one booking block, in hours.
+  blockHours: 2,
+
+  // Optional usage cap: maximum hours one person may hold per day, across all
+  // rooms. null = no cap (people may book as many blocks as they like).
+  // Set a number (e.g. 4) if utilisation data shows rooms are oversubscribed.
+  maxHoursPerPersonPerDay: null,
+
+  // If nobody has turned up this many minutes after the start, anyone may use
+  // the room. Shown to users; not enforced by the system.
+  noShowReleaseMinutes: 15,
+
+  // How many days ahead people can book (0 = today only).
+  bookingWindowDays: 7,
+
+  // Allow weekend bookings?
+  allowWeekends: false,
+
+  // Rooms. `type` drives the filter chips; `capacity` is informational.
+  rooms: [
+    { id: "relax-1", name: "Relax Room 1", type: "Relax Room", location: "Lounge", capacity: 6 },
+    { id: "relax-2", name: "Relax Room 2", type: "Relax Room", location: "Lounge", capacity: 6 },
+
+    { id: "pod-1", name: "Workpod 1", type: "Mini Workpod", location: "WHQ Office", capacity: 1 },
+    { id: "pod-2", name: "Workpod 2", type: "Mini Workpod", location: "WHQ Office", capacity: 1 },
+    { id: "pod-3", name: "Workpod 3", type: "Mini Workpod", location: "WHQ Office", capacity: 1 },
+    { id: "pod-4", name: "Workpod 4", type: "Mini Workpod", location: "WHQ Office", capacity: 1 },
+    { id: "pod-5", name: "Workpod 5", type: "Mini Workpod", location: "WHQ Office", capacity: 1 },
+    { id: "pod-6", name: "Workpod 6", type: "Mini Workpod", location: "WHQ Office", capacity: 1 },
+
+    { id: "disc-1", name: "Discussion Room 1", type: "Discussion Room", location: "WHQ", capacity: 6 },
+    { id: "disc-2", name: "Discussion Room 2", type: "Discussion Room", location: "WHQ", capacity: 6 },
+    { id: "disc-3", name: "Discussion Room 3", type: "Discussion Room", location: "WHQ", capacity: 6 },
+    { id: "disc-4", name: "Discussion Room 4", type: "Discussion Room", location: "WHQ", capacity: 6 },
+    { id: "disc-5", name: "Discussion Room 5", type: "Discussion Room", location: "WHQ", capacity: 6 },
+    { id: "disc-6", name: "Discussion Room 6", type: "Discussion Room", location: "WHQ", capacity: 6 },
+    { id: "disc-7", name: "Discussion Room 7", type: "Discussion Room", location: "WHQ", capacity: 6 },
+  ],
+};
+</script>
+  <script>
+(function () {
+  "use strict";
+
+  const C = window.BOOKING_CONFIG;
+  const STORE_KEY = "roombooking.bookings.v1";
+  const USER_KEY = "roombooking.user.v1";
+
+  // ---- Storage --------------------------------------------------------------
+  // Three backends with the same async interface:
+  //  - served by the Apps Script web app (apps-script/): google.script.run
+  //  - hosted elsewhere with sheetsApiUrl set: the web app's JSON API
+  //  - otherwise: this browser's localStorage, for trying it on one machine.
+  const localStore = {
+    async list() {
+      try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
+    },
+    async add(b) {
+      const list = await this.list();
+      if (list.some((x) => x.roomId === b.roomId && x.date === b.date && x.start === b.start))
+        throw new Error("Sorry, that slot was just taken. Please pick another.");
+      const booking = { ...b, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), createdAt: new Date().toISOString() };
+      this._save(list.concat(booking));
+      return booking;
+    },
+    async cancel(id) {
+      this._save((await this.list()).filter((x) => x.id !== id));
+    },
+    _save(list) {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(list)); } catch {}
+    },
+  };
+
+  const sheetsStore = {
+    async list() {
+      const from = ymd(addDays(new Date(), -31));
+      const res = await fetch(`${C.sheetsApiUrl}?action=list&from=${from}`);
+      return (await this._json(res)).bookings;
+    },
+    async add(b) {
+      return (await this._post({ action: "book", booking: b })).booking;
+    },
+    async cancel(id, email) {
+      await this._post({ action: "cancel", id, email });
+    },
+    async _post(body) {
+      // text/plain keeps this a "simple" request, which Apps Script accepts cross-origin.
+      const res = await fetch(C.sheetsApiUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) });
+      return this._json(res);
+    },
+    async _json(res) {
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Something went wrong.");
+      return data;
+    },
+  };
+
+  const gasRun = (fn, ...args) =>
+    new Promise((resolve, reject) =>
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler((e) => reject(new Error(String(e && e.message || e).replace(/^Error:\s*/, ""))))
+        [fn](...args));
+  const appsScriptStore = {
+    list: () => gasRun("apiList", ymd(addDays(new Date(), -31))),
+    add: (b) => gasRun("apiBook", b),
+    cancel: (id, email) => gasRun("apiCancel", id, email),
+  };
+
+  const store = window.google?.script?.run ? appsScriptStore : C.sheetsApiUrl ? sheetsStore : localStore;
+
+  function loadUser() {
+    try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; }
+  }
+  function saveUser(u) {
+    try { localStorage.setItem(USER_KEY, JSON.stringify(u)); } catch {}
+  }
+
+  // ---- Time helpers ---------------------------------------------------------
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parseYmd = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
+  const fmtDay = (d) => d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+
+  // Slots: [{start: 8, end: 10, label: "08:00–10:00"}, ...]
+  const SLOTS = [];
+  for (let h = C.openHour; h + C.blockHours <= C.closeHour; h += C.blockHours) {
+    SLOTS.push({ start: h, end: h + C.blockHours, label: `${pad(h)}:00–${pad(h + C.blockHours)}:00` });
+  }
+
+  function bookableDays() {
+    const out = [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    for (let i = 0; i <= C.bookingWindowDays; i++) {
+      const d = addDays(today, i);
+      if (C.allowWeekends || !isWeekend(d)) out.push(d);
+    }
+    return out;
+  }
+
+  function slotIsPast(dateStr, slot) {
+    const end = parseYmd(dateStr); end.setHours(slot.end, 0, 0, 0);
+    return end <= new Date();
+  }
+
+  // ---- State ---------------------------------------------------------------
+  let bookings = [];
+  let user = loadUser();
+  if (user && !user.phone) user = null; // saved before phone numbers were required
+  let busy = false;
+  const days = bookableDays();
+  let selectedDay = days.length ? ymd(days[0]) : ymd(new Date());
+  let selectedType = "All";
+  const types = ["All", ...new Set(C.rooms.map((r) => r.type))];
+
+  const el = (id) => document.getElementById(id);
+  const roomById = (id) => C.rooms.find((r) => r.id === id);
+  const sameUser = (b) => user && b.email.toLowerCase() === user.email.toLowerCase();
+
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function toast(msg) {
+    const t = el("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove("show"), 2800);
+  }
+
+  // ---- Rules ---------------------------------------------------------------
+  // Checked here for instant feedback; the Sheets backend re-checks under a lock.
+  function hoursUsed(email, dateStr) {
+    return bookings
+      .filter((b) => b.date === dateStr && b.email.toLowerCase() === email.toLowerCase())
+      .reduce((sum, b) => sum + (b.end - b.start), 0);
+  }
+
+  function capReached(dateStr) {
+    return !!(user && C.maxHoursPerPersonPerDay &&
+      hoursUsed(user.email, dateStr) + C.blockHours > C.maxHoursPerPersonPerDay);
+  }
+
+  function canBook(roomId, dateStr, slot) {
+    if (!user) return "Enter your name, work email and phone number first.";
+    if (slotIsPast(dateStr, slot)) return "That slot has already passed.";
+    if (bookings.some((b) => b.roomId === roomId && b.date === dateStr && b.start === slot.start))
+      return "That slot was just taken.";
+    if (bookings.some((b) => sameUser(b) && b.date === dateStr && b.start === slot.start))
+      return "You already have a booking at that time.";
+    if (capReached(dateStr))
+      return `Daily limit reached: ${C.maxHoursPerPersonPerDay}h per person per day.`;
+    return null;
+  }
+
+  async function refresh() {
+    try {
+      bookings = await store.list();
+    } catch (e) {
+      toast("Couldn't load bookings: " + e.message);
+    }
+    render();
+  }
+
+  async function run(work, done) {
+    if (busy) return;
+    busy = true;
+    document.body.classList.add("busy");
+    try {
+      await work();
+      toast(done);
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      busy = false;
+      document.body.classList.remove("busy");
+      await refresh();
+    }
+  }
+
+  function book(roomId, dateStr, slot) {
+    const err = canBook(roomId, dateStr, slot);
+    if (err) { toast(err); return; }
+    const room = roomById(roomId);
+    run(
+      () => store.add({ roomId, roomName: room.name, date: dateStr, start: slot.start, end: slot.end,
+                        name: user.name, email: user.email, phone: user.phone }),
+      `Booked ${room.name}, ${fmtDay(parseYmd(dateStr))} ${slot.label}`
+    );
+  }
+
+  function cancel(id) {
+    const b = bookings.find((x) => x.id === id);
+    if (!b || !sameUser(b)) return;
+    if (!confirm(`Cancel ${roomById(b.roomId)?.name || b.roomId} on ${fmtDay(parseYmd(b.date))}?`)) return;
+    run(() => store.cancel(id, user.email), "Booking cancelled — the slot is free for others.");
+  }
+
+  // ---- Rendering -----------------------------------------------------------
+  function renderWho() {
+    el("who-name").value = user?.name || "";
+    el("who-email").value = user?.email || "";
+    el("who-phone").value = user?.phone || "";
+    el("who-status").textContent = user ? `Booking as ${user.name}` : "Not set";
+  }
+
+  function renderRules() {
+    let limit;
+    if (C.maxHoursPerPersonPerDay) {
+      const used = user ? hoursUsed(user.email, selectedDay) : 0;
+      limit = `Limit: <b>${C.maxHoursPerPersonPerDay}h per person per day</b>` +
+        (user ? ` <span class="muted">(you've used ${used}h on this day)</span>. ` : ". ");
+    } else {
+      limit = "Book as many blocks as you need, one room per time block. ";
+    }
+    el("rules").innerHTML =
+      `Bookings are in <b>${C.blockHours}-hour blocks</b> (${pad(C.openHour)}:00–${pad(C.closeHour)}:00), ` +
+      `up to ${C.bookingWindowDays} days ahead. ${limit}<br>` +
+      `<b>No-show:</b> if nobody has turned up ${C.noShowReleaseMinutes} minutes after the start, anyone may use the room. ` +
+      `Questions about a booking? Contact the person who booked it — their number is on the slot.` +
+      (store !== localStore ? "" : ` <span class="muted">(Prototype mode: bookings are saved in this browser only.)</span>`);
+  }
+
+  function renderDays() {
+    el("days").innerHTML = "";
+    for (const d of days) {
+      const b = document.createElement("button");
+      b.textContent = fmtDay(d);
+      b.className = ymd(d) === selectedDay ? "active" : "";
+      b.onclick = () => { selectedDay = ymd(d); render(); };
+      el("days").appendChild(b);
+    }
+  }
+
+  function renderTypes() {
+    el("types").innerHTML = "";
+    for (const t of types) {
+      const b = document.createElement("button");
+      b.textContent = t === "All" ? "All rooms" : t + "s";
+      b.className = t === selectedType ? "active" : "";
+      b.onclick = () => { selectedType = t; render(); };
+      el("types").appendChild(b);
+    }
+  }
+
+  function renderGrid() {
+    const grid = el("grid");
+    grid.innerHTML = "";
+    const head = grid.insertRow();
+    head.innerHTML = `<th class="room">Room</th>` + SLOTS.map((s) => `<th>${s.label}</th>`).join("");
+
+    const atCap = capReached(selectedDay);
+    let lastType = null;
+    for (const room of C.rooms) {
+      if (selectedType !== "All" && room.type !== selectedType) continue;
+      if (room.type !== lastType) {
+        const g = grid.insertRow(); g.className = "group";
+        g.innerHTML = `<th colspan="${SLOTS.length + 1}">${room.type}s</th>`;
+        lastType = room.type;
+      }
+      const tr = grid.insertRow();
+      const th = document.createElement("th");
+      th.className = "room";
+      th.innerHTML = `${room.name}<small>${room.location} · ${room.capacity} pax</small>`;
+      tr.appendChild(th);
+
+      for (const slot of SLOTS) {
+        const td = tr.insertCell();
+        const btn = document.createElement("button");
+        btn.className = "slot";
+        const b = bookings.find((x) => x.roomId === room.id && x.date === selectedDay && x.start === slot.start);
+        if (b && sameUser(b)) {
+          btn.classList.add("mine"); btn.textContent = "Yours · cancel";
+          btn.onclick = () => cancel(b.id);
+        } else if (b) {
+          btn.classList.add("taken"); btn.disabled = true;
+          btn.innerHTML = `${esc(b.name)}<small>${esc(b.phone || "")}</small>`;
+        } else if (slotIsPast(selectedDay, slot)) {
+          btn.classList.add("past"); btn.textContent = "—"; btn.disabled = true;
+        } else {
+          btn.classList.add(atCap ? "blocked" : "free");
+          btn.textContent = atCap ? "Limit reached" : "Book";
+          btn.onclick = () => book(room.id, selectedDay, slot);
+        }
+        btn.title = `${room.name} · ${slot.label}` + (b ? ` · booked by ${b.name}, ${b.phone || ""}` : "");
+        td.appendChild(btn);
+      }
+    }
+  }
+
+  function renderMine() {
+    const list = el("mine-list");
+    if (!user) { list.innerHTML = `<p class="empty">Enter your name and email above to see your bookings.</p>`; return; }
+    const mine = bookings
+      .filter((b) => sameUser(b) && !slotIsPast(b.date, b))
+      .sort((a, b) => (a.date + pad(a.start)).localeCompare(b.date + pad(b.start)));
+    if (!mine.length) { list.innerHTML = `<p class="empty">No upcoming bookings.</p>`; return; }
+    list.innerHTML = "";
+    for (const b of mine) {
+      const room = roomById(b.roomId);
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `<div><strong>${room?.name || b.roomId}</strong>
+        <div class="when">${fmtDay(parseYmd(b.date))} · ${pad(b.start)}:00–${pad(b.end)}:00 · ${room?.location || ""}</div></div>`;
+      const btn = document.createElement("button");
+      btn.textContent = "Cancel";
+      btn.onclick = () => cancel(b.id);
+      card.appendChild(btn);
+      list.appendChild(card);
+    }
+  }
+
+  function renderUsage() {
+    const range = Number(el("usage-range").value);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const dates = [];
+    if (range > 0) for (let i = 0; i < range; i++) dates.push(addDays(today, i));
+    else for (let i = range; i < 0; i++) dates.push(addDays(today, i));
+    const dayStrs = dates.filter((d) => C.allowWeekends || !isWeekend(d)).map(ymd);
+    const daySet = new Set(dayStrs);
+    const inRange = bookings.filter((b) => daySet.has(b.date));
+
+    const rows = types.filter((t) => t !== "All").map((t) => {
+      const rooms = C.rooms.filter((r) => r.type === t);
+      const capacity = rooms.length * SLOTS.length * dayStrs.length;
+      const used = inRange.filter((b) => roomById(b.roomId)?.type === t).length;
+      return { label: t + "s", rooms: rooms.length, used, capacity };
+    });
+    const total = rows.reduce((a, r) => ({ used: a.used + r.used, capacity: a.capacity + r.capacity }), { used: 0, capacity: 0 });
+    const pct = (u, c) => (c ? Math.round((u / c) * 100) : 0);
+
+    const slotRows = SLOTS.map((s) => {
+      const used = inRange.filter((b) => b.start === s.start).length;
+      return { label: s.label, used, capacity: C.rooms.length * dayStrs.length };
+    });
+
+    const people = new Set(inRange.map((b) => b.email.toLowerCase())).size;
+    const tableHtml = (title, list) => `
+      <table class="usage-table" style="margin-bottom:16px">
+        <tr><th>${title}</th><th>Blocks booked</th><th>Utilisation</th><th style="width:40%"></th></tr>
+        ${list.map((r) => `<tr><td>${r.label}</td><td>${r.used} / ${r.capacity}</td><td>${pct(r.used, r.capacity)}%</td>
+          <td><div class="bar"><i style="width:${pct(r.used, r.capacity)}%"></i></div></td></tr>`).join("")}
+      </table>`;
+
+    const overall = pct(total.used, total.capacity);
+    el("usage").innerHTML =
+      `<p><strong>${overall}%</strong> overall · ${total.used} bookings · ${people} people · ${dayStrs.length} working days</p>` +
+      tableHtml("Room type", rows) + tableHtml("Time block", slotRows) +
+      (overall < 50 && total.capacity && C.maxHoursPerPersonPerDay
+        ? `<p class="hint">Utilisation is under 50% — consider raising <code>maxHoursPerPersonPerDay</code> in config.js.</p>`
+        : overall >= 85
+        ? `<p class="hint">Utilisation is 85%+ — demand is high; consider a per-person cap (<code>maxHoursPerPersonPerDay</code>) or shorter blocks.</p>`
+        : "");
+  }
+
+  function exportCsv() {
+    const head = ["date", "start", "end", "room", "type", "name", "email", "phone", "createdAt"];
+    const csv = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [head.join(",")].concat(
+      bookings.map((b) => {
+        const r = roomById(b.roomId);
+        return [b.date, `${pad(b.start)}:00`, `${pad(b.end)}:00`, r?.name || b.roomId, r?.type || "", b.name, b.email, b.phone || "", b.createdAt].map(csv).join(",");
+      })
+    );
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = `room-bookings-${ymd(new Date())}.csv`;
+    a.click();
+  }
+
+  function render() {
+    renderWho(); renderRules(); renderDays(); renderTypes(); renderGrid(); renderMine(); renderUsage();
+  }
+
+  // ---- Wiring --------------------------------------------------------------
+  el("who").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = el("who-name").value.trim();
+    const email = el("who-email").value.trim();
+    const phone = el("who-phone").value.trim();
+    if (!name || !email || !phone) return;
+    user = { name, email, phone };
+    saveUser(user);
+    toast(`Saved — booking as ${name}`);
+    render();
+  });
+
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+      document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== "view-" + t.dataset.view));
+    })
+  );
+  el("usage-range").addEventListener("change", renderUsage);
+  el("export").addEventListener("click", exportCsv);
+  window.addEventListener("storage", (e) => { if (e.key === STORE_KEY) refresh(); });
+  // Pick up other people's bookings while the page is open.
+  setInterval(() => { if (!busy && !document.hidden) refresh(); }, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+
+  render();
+  refresh();
+})();
+</script>
+</body>
+</html>

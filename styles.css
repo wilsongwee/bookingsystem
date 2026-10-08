@@ -51,7 +51,8 @@ main { padding: 16px; max-width: 1200px; margin: 0 auto; }
 .slot { width: 100%; min-height: 34px; border-radius: 6px; border: 1px solid transparent; font-size: 12px; padding: 4px; }
 .slot.free { background: var(--free); color: var(--free-ink); }
 .slot.mine { background: var(--mine); color: var(--accent-ink); font-weight: 600; }
-.slot.taken { background: var(--taken); color: var(--taken-ink); cursor: default; }
+.slot.taken { background: var(--taken); color: var(--text); cursor: default; line-height: 1.25; }
+.slot small { display: block; color: var(--taken-ink); font-size: 11px; }
 .slot.past { background: var(--past); color: var(--muted); cursor: default; opacity: .6; }
 .slot.blocked { background: var(--free); color: var(--muted); opacity: .55; }
 
@@ -67,3 +68,6 @@ main { padding: 16px; max-width: 1200px; margin: 0 auto; }
 
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
 .toast.show { opacity: 1; }
+body.busy, body.busy .slot { cursor: progress; }
+.who input { width: 170px; }
+@media (max-width: 600px) { .who input { width: 100%; } }

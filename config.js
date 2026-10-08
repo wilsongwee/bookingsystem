@@ -1,6 +1,10 @@
 // Booking rules and room list. Edit this file to adjust the system —
 // no other code changes are needed for the common tweaks.
 window.BOOKING_CONFIG = {
+  // Google Sheets backend: paste the Apps Script web app URL here (see
+  // apps-script/SETUP.md). Leave empty to keep bookings in this browser only.
+  sheetsApiUrl: "",
+
   // Operating hours (24h clock). Slots are generated from open to close.
   openHour: 8,
   closeHour: 18,
@@ -8,9 +12,14 @@ window.BOOKING_CONFIG = {
   // Length of one booking block, in hours.
   blockHours: 2,
 
-  // Usage cap: maximum hours one person may hold per day, across all rooms.
-  // Raise this (e.g. to 4) if utilisation data shows spare capacity.
-  maxHoursPerPersonPerDay: 2,
+  // Optional usage cap: maximum hours one person may hold per day, across all
+  // rooms. null = no cap (people may book as many blocks as they like).
+  // Set a number (e.g. 4) if utilisation data shows rooms are oversubscribed.
+  maxHoursPerPersonPerDay: null,
+
+  // If nobody has turned up this many minutes after the start, anyone may use
+  // the room. Shown to users; not enforced by the system.
+  noShowReleaseMinutes: 15,
 
   // How many days ahead people can book (0 = today only).
   bookingWindowDays: 7,
