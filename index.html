@@ -4,62 +4,87 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Room Booking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <h1>Room Booking</h1>
-      <p class="sub">Relax Rooms · Mini Workpods · Discussion Rooms</p>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="brand">
+        <div class="logo" id="logo"></div>
+        <div>
+          <h1>Room Booking</h1>
+          <p>Relax Rooms · Mini Workpods · Discussion Rooms</p>
+        </div>
+      </div>
+      <div id="profile" class="profile"></div>
     </div>
-    <form id="who" class="who" autocomplete="on">
-      <input id="who-name" name="name" placeholder="Your name" required>
-      <input id="who-email" name="email" type="email" placeholder="Work email" required>
-      <input id="who-phone" name="tel" type="tel" placeholder="Phone number" required>
-      <button type="submit">Save</button>
-      <span id="who-status" class="who-status"></span>
-    </form>
-  </header>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab active" data-view="book" role="tab">Book a room</button>
-    <button class="tab" data-view="mine" role="tab">My bookings</button>
-    <button class="tab" data-view="usage" role="tab">Utilisation</button>
-  </nav>
+    <form id="who" class="who-card" autocomplete="on" hidden>
+      <div class="who-intro">
+        <strong>Who's booking?</strong>
+        <span>Your name and number appear on slots you book, so colleagues know who to contact.</span>
+      </div>
+      <div class="who-fields">
+        <label><span>Name</span><input id="who-name" name="name" placeholder="e.g. Alex Tan" required></label>
+        <label><span>Work email</span><input id="who-email" name="email" type="email" placeholder="name@company.com" required></label>
+        <label><span>Phone</span><input id="who-phone" name="tel" type="tel" placeholder="9123 4567" required></label>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="book" role="tab">Book a room</button>
+      <button class="tab" data-view="mine" role="tab">My bookings <span id="mine-count" class="count" hidden></span></button>
+      <button class="tab" data-view="usage" role="tab">Utilisation</button>
+    </nav>
+  </header>
 
   <main>
     <section id="view-book" class="view">
-      <div class="rules" id="rules"></div>
-      <div class="controls">
-        <div id="days" class="days"></div>
-        <div id="types" class="chips"></div>
+      <div id="rules" class="rules"></div>
+      <div id="banner"></div>
+
+      <h2 class="section-label">Choose a day</h2>
+      <div id="days" class="days"></div>
+
+      <h2 class="section-label">Choose a room type</h2>
+      <div id="types" class="type-cards"></div>
+
+      <div class="card grid-card">
+        <div class="grid-head">
+          <h2 id="grid-title"></h2>
+          <div class="legend">
+            <span><i class="sw free"></i>Available</span>
+            <span><i class="sw mine"></i>Yours</span>
+            <span><i class="sw taken"></i>Booked</span>
+            <span><i class="sw past"></i>Past</span>
+          </div>
+        </div>
+        <div class="grid-wrap"><table id="grid" class="grid"></table></div>
       </div>
-      <div class="legend">
-        <span><i class="sw free"></i>Available</span>
-        <span><i class="sw mine"></i>Your booking</span>
-        <span><i class="sw taken"></i>Booked</span>
-        <span><i class="sw past"></i>Past</span>
-      </div>
-      <div class="grid-wrap"><table id="grid" class="grid"></table></div>
     </section>
 
     <section id="view-mine" class="view" hidden>
-      <h2>My upcoming bookings</h2>
-      <div id="mine-list"></div>
+      <h2 class="view-title">My upcoming bookings</h2>
+      <div id="mine-list" class="mine-list"></div>
     </section>
 
     <section id="view-usage" class="view" hidden>
-      <h2>Utilisation</h2>
-      <p class="muted">Share of available 2-hour blocks that were booked, over the selected period. Use this to decide when to adjust the cap.</p>
-      <div class="controls">
-        <label>Period
-          <select id="usage-range">
+      <div class="usage-head">
+        <div>
+          <h2 class="view-title">Utilisation</h2>
+          <p class="muted">Share of available 2-hour blocks that were booked. Use it to decide when to adjust the rules.</p>
+        </div>
+        <div class="usage-controls">
+          <select id="usage-range" aria-label="Period">
             <option value="7">Next 7 days</option>
             <option value="-7">Past 7 days</option>
             <option value="-30">Past 30 days</option>
           </select>
-        </label>
-        <button id="export">Export bookings (CSV)</button>
+          <button id="export" class="btn-ghost"></button>
+        </div>
       </div>
       <div id="usage"></div>
     </section>

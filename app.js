@@ -196,37 +196,101 @@
     run(() => store.cancel(id, user.email), "Booking cancelled — the slot is free for others.");
   }
 
+  // ---- Look & feel ---------------------------------------------------------
+  const ICON_PATHS = {
+    logo: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+    sofa: '<path d="M20 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3"/><path d="M2 16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z"/><path d="M4 18v2M20 18v2"/>',
+    monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    timer: '<path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+    chart: '<path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3"/>',
+  };
+  const icon = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
+
+  // Colour and icon per room type; unknown types fall back to the brand style.
+  const TYPE_STYLE = {
+    "Relax Room": { cls: "t-relax", icon: "sofa" },
+    "Mini Workpod": { cls: "t-pod", icon: "monitor" },
+    "Discussion Room": { cls: "t-disc", icon: "users" },
+  };
+  const typeStyle = (t) => TYPE_STYLE[t] || { cls: "", icon: "logo" };
+
+  const AVATAR_COLOURS = ["#6366F1", "#8B5CF6", "#EC4899", "#F97316", "#10B981", "#0EA5E9", "#14B8A6", "#EF4444"];
+  function avatar(name, small) {
+    const s = String(name || "?");
+    let h = 0;
+    for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const initials = s.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+    return `<span class="avatar${small ? " sm" : ""}" style="background:${AVATAR_COLOURS[h % AVATAR_COLOURS.length]}">${esc(initials)}</span>`;
+  }
+
+  const dow = (d) => d.toLocaleDateString(undefined, { weekday: "short" });
+  const mon = (d) => d.toLocaleDateString(undefined, { month: "short" });
+  const isToday = (d) => ymd(d) === ymd(new Date());
+  const slotFor = (b) => SLOTS.find((s) => s.start === b.start) || { start: b.start, end: b.end, label: `${pad(b.start)}:00–${pad(b.end)}:00` };
+
+  function freeCount(dateStr, type) {
+    let n = 0;
+    for (const room of C.rooms) {
+      if (type && type !== "All" && room.type !== type) continue;
+      for (const slot of SLOTS) {
+        if (slotIsPast(dateStr, slot)) continue;
+        if (!bookings.some((b) => b.roomId === room.id && b.date === dateStr && b.start === slot.start)) n++;
+      }
+    }
+    return n;
+  }
+
   // ---- Rendering -----------------------------------------------------------
+  let editingWho = false;
+
   function renderWho() {
+    const showForm = !user || editingWho;
+    el("who").hidden = !showForm;
     el("who-name").value = user?.name || "";
     el("who-email").value = user?.email || "";
     el("who-phone").value = user?.phone || "";
-    el("who-status").textContent = user ? `Booking as ${user.name}` : "Not set";
+    el("profile").innerHTML = user
+      ? `<div class="who-chip">${avatar(user.name)}<div><strong>${esc(user.name)}</strong><small>${esc(user.phone)}</small></div>
+           <button type="button" id="who-edit">${editingWho ? "Close" : "Edit"}</button></div>`
+      : "";
+    const edit = document.getElementById("who-edit");
+    if (edit) edit.onclick = () => { editingWho = !editingWho; renderWho(); };
   }
 
   function renderRules() {
-    let limit;
-    if (C.maxHoursPerPersonPerDay) {
-      const used = user ? hoursUsed(user.email, selectedDay) : 0;
-      limit = `Limit: <b>${C.maxHoursPerPersonPerDay}h per person per day</b>` +
-        (user ? ` <span class="muted">(you've used ${used}h on this day)</span>. ` : ". ");
-    } else {
-      limit = "Book as many blocks as you need, one room per time block. ";
-    }
+    const rule = (ic, title, text) =>
+      `<div class="rule"><div class="ic">${icon(ic)}</div><div><strong>${title}</strong><span>${text}</span></div></div>`;
+    let limit = C.maxHoursPerPersonPerDay
+      ? rule("calendar", `Up to ${C.maxHoursPerPersonPerDay}h per person a day`,
+          user ? `You've used ${hoursUsed(user.email, selectedDay)}h on this day` : `Book up to ${C.bookingWindowDays} days ahead`)
+      : rule("calendar", `Book up to ${C.bookingWindowDays} days ahead`, "As many blocks as you need, one room at a time");
     el("rules").innerHTML =
-      `Bookings are in <b>${C.blockHours}-hour blocks</b> (${pad(C.openHour)}:00–${pad(C.closeHour)}:00), ` +
-      `up to ${C.bookingWindowDays} days ahead. ${limit}<br>` +
-      `<b>No-show:</b> if nobody has turned up ${C.noShowReleaseMinutes} minutes after the start, anyone may use the room. ` +
-      `Questions about a booking? Contact the person who booked it — their number is on the slot.` +
-      (store !== localStore ? "" : ` <span class="muted">(Prototype mode: bookings are saved in this browser only.)</span>`);
+      rule("clock", `${C.blockHours}-hour blocks`, `${pad(C.openHour)}:00 – ${pad(C.closeHour)}:00 on ${C.allowWeekends ? "all days" : "weekdays"}`) +
+      limit +
+      rule("timer", `${C.noShowReleaseMinutes}-minute no-show rule`, "No one there? Anyone may use the room") +
+      rule("phone", "Questions about a booking?", "Call the booker — their number is on the slot");
+    el("banner").innerHTML = store !== localStore ? "" :
+      `<div class="banner">${icon("info")} Prototype mode: bookings are saved in this browser only.</div>`;
   }
 
   function renderDays() {
     el("days").innerHTML = "";
     for (const d of days) {
       const b = document.createElement("button");
-      b.textContent = fmtDay(d);
-      b.className = ymd(d) === selectedDay ? "active" : "";
+      const free = freeCount(ymd(d), "All");
+      b.className = "day" + (ymd(d) === selectedDay ? " active" : "");
+      b.innerHTML = `<div class="dow">${isToday(d) ? "Today" : dow(d)}</div><div class="num">${d.getDate()}</div>
+        <div class="mon">${mon(d)}</div><div class="free-n${free ? "" : " none"}">${free ? free + " free" : "Full"}</div>`;
       b.onclick = () => { selectedDay = ymd(d); render(); };
       el("days").appendChild(b);
     }
@@ -235,33 +299,47 @@
   function renderTypes() {
     el("types").innerHTML = "";
     for (const t of types) {
+      const st = typeStyle(t);
+      const rooms = t === "All" ? C.rooms.length : C.rooms.filter((r) => r.type === t).length;
+      const free = freeCount(selectedDay, t);
       const b = document.createElement("button");
-      b.textContent = t === "All" ? "All rooms" : t + "s";
-      b.className = t === selectedType ? "active" : "";
+      b.className = `type-card ${st.cls}` + (t === selectedType ? " active" : "");
+      b.innerHTML = `<div class="ic">${icon(st.icon)}</div><div><strong>${t === "All" ? "All rooms" : t + "s"}</strong>
+        <span>${rooms} room${rooms === 1 ? "" : "s"} · ${free} slot${free === 1 ? "" : "s"} free</span></div>`;
       b.onclick = () => { selectedType = t; render(); };
       el("types").appendChild(b);
     }
   }
 
   function renderGrid() {
+    const d = parseYmd(selectedDay);
+    el("grid-title").textContent =
+      `${selectedType === "All" ? "All rooms" : selectedType + "s"} · ${d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}`;
+
     const grid = el("grid");
     grid.innerHTML = "";
     const head = grid.insertRow();
+    head.className = "head";
     head.innerHTML = `<th class="room">Room</th>` + SLOTS.map((s) => `<th>${s.label}</th>`).join("");
 
     const atCap = capReached(selectedDay);
     let lastType = null;
     for (const room of C.rooms) {
       if (selectedType !== "All" && room.type !== selectedType) continue;
-      if (room.type !== lastType) {
-        const g = grid.insertRow(); g.className = "group";
-        g.innerHTML = `<th colspan="${SLOTS.length + 1}">${room.type}s</th>`;
-        lastType = room.type;
+      const st = typeStyle(room.type);
+      if (room.type !== lastType && selectedType === "All") {
+        const g = grid.insertRow();
+        g.className = `group ${st.cls}`;
+        g.innerHTML = `<th colspan="${SLOTS.length + 1}"><span class="group-label"><i class="dot"></i>${room.type}s</span></th>`;
       }
+      lastType = room.type;
+
       const tr = grid.insertRow();
+      tr.className = st.cls;
       const th = document.createElement("th");
       th.className = "room";
-      th.innerHTML = `${room.name}<small>${room.location} · ${room.capacity} pax</small>`;
+      th.innerHTML = `<div class="room-cell"><div class="ic">${icon(st.icon)}</div><div><strong>${esc(room.name)}</strong>
+        <small>${icon("pin")} ${esc(room.location)} · ${room.capacity} pax</small></div></div>`;
       tr.appendChild(th);
 
       for (const slot of SLOTS) {
@@ -270,16 +348,19 @@
         btn.className = "slot";
         const b = bookings.find((x) => x.roomId === room.id && x.date === selectedDay && x.start === slot.start);
         if (b && sameUser(b)) {
-          btn.classList.add("mine"); btn.textContent = "Yours · cancel";
+          btn.classList.add("mine");
+          btn.innerHTML = `<span>${icon("check")} Yours</span><small>Tap to cancel</small>`;
           btn.onclick = () => cancel(b.id);
         } else if (b) {
           btn.classList.add("taken"); btn.disabled = true;
-          btn.innerHTML = `${esc(b.name)}<small>${esc(b.phone || "")}</small>`;
+          btn.innerHTML = `${avatar(b.name, true)}<span class="who"><span>${esc(b.name)}</span><small>${icon("phone")} ${esc(b.phone || "")}</small></span>`;
         } else if (slotIsPast(selectedDay, slot)) {
-          btn.classList.add("past"); btn.textContent = "—"; btn.disabled = true;
+          btn.classList.add("past"); btn.textContent = "Past"; btn.disabled = true;
+        } else if (atCap) {
+          btn.classList.add("blocked"); btn.textContent = "Limit reached";
+          btn.onclick = () => book(room.id, selectedDay, slot);
         } else {
-          btn.classList.add(atCap ? "blocked" : "free");
-          btn.textContent = atCap ? "Limit reached" : "Book";
+          btn.classList.add("free"); btn.innerHTML = `${icon("plus")} Book`;
           btn.onclick = () => book(room.id, selectedDay, slot);
         }
         btn.title = `${room.name} · ${slot.label}` + (b ? ` · booked by ${b.name}, ${b.phone || ""}` : "");
@@ -290,20 +371,29 @@
 
   function renderMine() {
     const list = el("mine-list");
-    if (!user) { list.innerHTML = `<p class="empty">Enter your name and email above to see your bookings.</p>`; return; }
-    const mine = bookings
-      .filter((b) => sameUser(b) && !slotIsPast(b.date, b))
-      .sort((a, b) => (a.date + pad(a.start)).localeCompare(b.date + pad(b.start)));
-    if (!mine.length) { list.innerHTML = `<p class="empty">No upcoming bookings.</p>`; return; }
+    const empty = (ic, title, text) =>
+      `<div class="card empty"><div class="ic">${icon(ic)}</div><strong>${title}</strong>${text}</div>`;
+    const mine = user
+      ? bookings.filter((b) => sameUser(b) && !slotIsPast(b.date, b))
+          .sort((a, b) => (a.date + pad(a.start)).localeCompare(b.date + pad(b.start)))
+      : [];
+    el("mine-count").hidden = !mine.length;
+    el("mine-count").textContent = mine.length;
+    if (!user) { list.innerHTML = empty("users", "Who's booking?", "Enter your details at the top to see your bookings."); return; }
+    if (!mine.length) { list.innerHTML = empty("calendar", "No upcoming bookings", "Head to “Book a room” to grab a slot."); return; }
     list.innerHTML = "";
     for (const b of mine) {
       const room = roomById(b.roomId);
+      const st = typeStyle(room?.type);
+      const d = parseYmd(b.date);
       const card = document.createElement("div");
-      card.className = "card";
-      card.innerHTML = `<div><strong>${room?.name || b.roomId}</strong>
-        <div class="when">${fmtDay(parseYmd(b.date))} · ${pad(b.start)}:00–${pad(b.end)}:00 · ${room?.location || ""}</div></div>`;
+      card.className = `card booking ${st.cls}`;
+      card.innerHTML = `<div class="date-tile"><div class="dow">${isToday(d) ? "Today" : dow(d)}</div><div class="num">${d.getDate()}</div><div class="dow">${mon(d)}</div></div>
+        <div class="info"><strong>${icon(st.icon)} ${esc(room?.name || b.roomId)}</strong>
+        <span><em>${icon("clock")} ${slotFor(b).label}</em><em>${icon("pin")} ${esc(room?.location || "")}</em></span></div>`;
       const btn = document.createElement("button");
-      btn.textContent = "Cancel";
+      btn.className = "btn-cancel";
+      btn.innerHTML = `${icon("x")} Cancel`;
       btn.onclick = () => cancel(b.id);
       card.appendChild(btn);
       list.appendChild(card);
@@ -319,37 +409,38 @@
     const dayStrs = dates.filter((d) => C.allowWeekends || !isWeekend(d)).map(ymd);
     const daySet = new Set(dayStrs);
     const inRange = bookings.filter((b) => daySet.has(b.date));
+    const pct = (u, c) => (c ? Math.round((u / c) * 100) : 0);
 
-    const rows = types.filter((t) => t !== "All").map((t) => {
+    const typeRows = types.filter((t) => t !== "All").map((t) => {
       const rooms = C.rooms.filter((r) => r.type === t);
       const capacity = rooms.length * SLOTS.length * dayStrs.length;
       const used = inRange.filter((b) => roomById(b.roomId)?.type === t).length;
-      return { label: t + "s", rooms: rooms.length, used, capacity };
+      return { label: t + "s", st: typeStyle(t), used, capacity };
     });
-    const total = rows.reduce((a, r) => ({ used: a.used + r.used, capacity: a.capacity + r.capacity }), { used: 0, capacity: 0 });
-    const pct = (u, c) => (c ? Math.round((u / c) * 100) : 0);
-
-    const slotRows = SLOTS.map((s) => {
-      const used = inRange.filter((b) => b.start === s.start).length;
-      return { label: s.label, used, capacity: C.rooms.length * dayStrs.length };
-    });
-
-    const people = new Set(inRange.map((b) => b.email.toLowerCase())).size;
-    const tableHtml = (title, list) => `
-      <table class="usage-table" style="margin-bottom:16px">
-        <tr><th>${title}</th><th>Blocks booked</th><th>Utilisation</th><th style="width:40%"></th></tr>
-        ${list.map((r) => `<tr><td>${r.label}</td><td>${r.used} / ${r.capacity}</td><td>${pct(r.used, r.capacity)}%</td>
-          <td><div class="bar"><i style="width:${pct(r.used, r.capacity)}%"></i></div></td></tr>`).join("")}
-      </table>`;
-
+    const slotRows = SLOTS.map((s) => ({
+      label: s.label, st: { cls: "", icon: "clock" },
+      used: inRange.filter((b) => b.start === s.start).length, capacity: C.rooms.length * dayStrs.length,
+    }));
+    const total = typeRows.reduce((a, r) => ({ used: a.used + r.used, capacity: a.capacity + r.capacity }), { used: 0, capacity: 0 });
     const overall = pct(total.used, total.capacity);
+    const people = new Set(inRange.map((b) => b.email.toLowerCase())).size;
+
+    const rows = (list) => list.map((r) => `
+      <div class="urow ${r.st.cls}"><div class="lbl"><span class="ic">${icon(r.st.icon)}</span>${r.label}</div>
+        <div class="bar"><i style="width:${pct(r.used, r.capacity)}%"></i></div><div class="n">${pct(r.used, r.capacity)}%</div>
+        <div class="sub">${r.used} of ${r.capacity} blocks</div></div>`).join("");
+    const stat = (k, v, cls = "") => `<div class="card stat ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+
     el("usage").innerHTML =
-      `<p><strong>${overall}%</strong> overall · ${total.used} bookings · ${people} people · ${dayStrs.length} working days</p>` +
-      tableHtml("Room type", rows) + tableHtml("Time block", slotRows) +
+      `<div class="stats">${stat("Overall utilisation", overall + "%", "hero-stat")}${stat("Bookings", total.used)}${stat("People", people)}${stat("Working days", dayStrs.length)}</div>
+       <div class="usage-cols">
+         <div class="card usage-card"><h3>By room type</h3>${rows(typeRows)}</div>
+         <div class="card usage-card"><h3>By time block</h3>${rows(slotRows)}</div>
+       </div>` +
       (overall < 50 && total.capacity && C.maxHoursPerPersonPerDay
-        ? `<p class="hint">Utilisation is under 50% — consider raising <code>maxHoursPerPersonPerDay</code> in config.js.</p>`
+        ? `<div class="hint">${icon("info")} Utilisation is under 50% — consider raising <code>maxHoursPerPersonPerDay</code> in config.js.</div>`
         : overall >= 85
-        ? `<p class="hint">Utilisation is 85%+ — demand is high; consider a per-person cap (<code>maxHoursPerPersonPerDay</code>) or shorter blocks.</p>`
+        ? `<div class="hint">${icon("info")} Utilisation is 85%+ — demand is high; consider a per-person cap (<code>maxHoursPerPersonPerDay</code>) or shorter blocks.</div>`
         : "");
   }
 
@@ -380,6 +471,7 @@
     const phone = el("who-phone").value.trim();
     if (!name || !email || !phone) return;
     user = { name, email, phone };
+    editingWho = false;
     saveUser(user);
     toast(`Saved — booking as ${name}`);
     render();
@@ -398,6 +490,8 @@
   setInterval(() => { if (!busy && !document.hidden) refresh(); }, 60000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 
+  el("logo").innerHTML = icon("logo");
+  el("export").innerHTML = `${icon("download")} Export CSV`;
   render();
   refresh();
 })();
